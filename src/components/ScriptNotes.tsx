@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { StickyNote, Plus, Trash2, ChevronDown, ChevronUp, ArrowRightLeft, Save } from 'lucide-react'
 import { useNoteStore } from '@/store/noteStore'
+import { useProfileStore } from '@/store/profileStore'
 import { cn } from '@/lib/utils'
 
 const PROJECT_OPTIONS = [
@@ -10,6 +11,14 @@ const PROJECT_OPTIONS = [
 
 const BUDGET_OPTIONS = ['未提及', '3000以内', '3000-8000', '8000-15000', '15000以上']
 
+const TAG_COLORS: Record<string, string> = {
+  frequency: '#E8734A',
+  skin: '#8B5CF6',
+  urgency: '#EF4444',
+  spending: '#3B82F6',
+  personality: '#10B981',
+}
+
 const STATUS_MAP: Record<string, { label: string; className: string }> = {
   draft: { label: '草稿', className: 'bg-gray-200 text-gray-600' },
   'pending-handover': { label: '待交接', className: 'bg-orange-100 text-orange-600' },
@@ -18,11 +27,14 @@ const STATUS_MAP: Record<string, { label: string; className: string }> = {
 
 export default function ScriptNotes() {
   const { notes, addNote, deleteNote } = useNoteStore()
+  const { selectedTags, profileTags } = useProfileStore()
   const [customerQuote, setCustomerQuote] = useState('')
   const [interestedProjects, setInterestedProjects] = useState<string[]>([])
   const [budget, setBudget] = useState('未提及')
   const [painPoints, setPainPoints] = useState('')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  const getTagById = (id: string) => profileTags.find((t) => t.id === id)
 
   const toggleProject = (name: string) => {
     setInterestedProjects((prev) =>
@@ -44,7 +56,7 @@ export default function ScriptNotes() {
       interestedProjects,
       budget,
       painPoints,
-      profileTagIds: [],
+      profileTagIds: selectedTags,
       status,
       createdBy: '当前咨询师',
       createdAt: new Date().toISOString(),
@@ -186,6 +198,25 @@ export default function ScriptNotes() {
                           {p}
                         </span>
                       ))}
+                    </div>
+                  )}
+
+                  {note.profileTagIds.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {note.profileTagIds.map((tagId) => {
+                        const tag = getTagById(tagId)
+                        if (!tag) return null
+                        const color = TAG_COLORS[tag.group]
+                        return (
+                          <span
+                            key={tagId}
+                            className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={{ backgroundColor: `${color}15`, color }}
+                          >
+                            {tag.name}
+                          </span>
+                        )
+                      })}
                     </div>
                   )}
 

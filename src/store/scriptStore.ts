@@ -1,13 +1,22 @@
 import { create } from 'zustand'
 import { ScriptEntry, defaultScripts } from '@/data/scripts'
+import adminDefaults, { AdminConfig } from '@/data/adminDefaults'
+import { UnifiedSearchResult, unifiedSearch as performUnifiedSearch } from '@/utils/searchEngine'
+
+export type { UnifiedSearchResult }
 
 interface ScriptState {
   scripts: ScriptEntry[]
+  adminConfigs: AdminConfig[]
   searchQuery: string
   searchResults: ScriptEntry[]
+  unifiedSearchQuery: string
+  unifiedSearchResults: UnifiedSearchResult[]
   setSearchQuery: (query: string) => void
   searchScripts: (query: string) => void
   getScriptById: (id: string) => ScriptEntry | undefined
+  setUnifiedSearchQuery: (query: string) => void
+  unifiedSearch: (query: string) => void
 }
 
 function fuzzyMatch(text: string, query: string): number {
@@ -42,8 +51,11 @@ function computeRelevance(entry: ScriptEntry, query: string): number {
 
 export const useScriptStore = create<ScriptState>((set, get) => ({
   scripts: defaultScripts,
+  adminConfigs: adminDefaults,
   searchQuery: '',
   searchResults: [],
+  unifiedSearchQuery: '',
+  unifiedSearchResults: [],
 
   setSearchQuery: (query) => {
     set({ searchQuery: query })
@@ -69,5 +81,24 @@ export const useScriptStore = create<ScriptState>((set, get) => ({
 
   getScriptById: (id) => {
     return get().scripts.find((s) => s.id === id)
+  },
+
+  setUnifiedSearchQuery: (query) => {
+    set({ unifiedSearchQuery: query })
+    if (!query.trim()) {
+      set({ unifiedSearchResults: [] })
+      return
+    }
+    get().unifiedSearch(query)
+  },
+
+  unifiedSearch: (query) => {
+    set({ unifiedSearchQuery: query })
+    if (!query.trim()) {
+      set({ unifiedSearchResults: [] })
+      return
+    }
+    const results = performUnifiedSearch(query, get().scripts, get().adminConfigs)
+    set({ unifiedSearchResults: results })
   },
 }))

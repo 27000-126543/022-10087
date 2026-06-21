@@ -1,7 +1,18 @@
 import { useState } from 'react'
 import { ClipboardList, CheckCircle2, Clock, ArrowRight } from 'lucide-react'
 import { useNoteStore } from '@/store/noteStore'
+import profileTags from '@/data/profileTags'
 import { cn } from '@/lib/utils'
+
+const TAG_COLORS: Record<string, string> = {
+  frequency: '#E8734A',
+  skin: '#8B5CF6',
+  urgency: '#EF4444',
+  spending: '#3B82F6',
+  personality: '#10B981',
+}
+
+const getTagById = (id: string) => profileTags.find((t) => t.id === id)
 
 type FilterTab = 'all' | 'pending-handover' | 'handed-over'
 
@@ -106,6 +117,25 @@ export default function HandoverRecords() {
                               {p}
                             </span>
                           ))}
+                        </div>
+                      )}
+
+                      {note.profileTagIds.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-2">
+                          {note.profileTagIds.map((tagId) => {
+                            const tag = getTagById(tagId)
+                            if (!tag) return null
+                            const color = TAG_COLORS[tag.group]
+                            return (
+                              <span
+                                key={tagId}
+                                className="text-xs px-2 py-0.5 rounded-full"
+                                style={{ backgroundColor: `${color}15`, color }}
+                              >
+                                {tag.name}
+                              </span>
+                            )
+                          })}
                         </div>
                       )}
 
