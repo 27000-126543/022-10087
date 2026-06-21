@@ -6,6 +6,8 @@ import type { AdminConfig } from '@/data/adminDefaults'
 
 type ConfigType = AdminConfig['type']
 
+const SCENE_OPTIONS = ['新客', '老客', '预算敏感', '术后关怀', '婚前急需', '高消费力']
+
 const TABS: { key: ConfigType; label: string }[] = [
   { key: 'store-expression', label: '门店专属表达' },
   { key: 'banned-claim', label: '禁用夸大承诺' },
@@ -75,6 +77,19 @@ function ConfigItem({
           >
             {config.content}
           </p>
+          {config.scenes && config.scenes.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-2">
+              {config.scenes.map((scene) => (
+                <span
+                  key={scene}
+                  className="px-2 py-0.5 rounded-full text-[10px] font-medium"
+                  style={{ backgroundColor: 'rgba(232, 115, 74, 0.1)', color: '#E8734A' }}
+                >
+                  {scene}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button onClick={onToggle} className="transition-colors">
@@ -93,18 +108,29 @@ function ConfigItem({
 
 function ConfigForm({
   initial,
+  type,
   onSave,
   onDelete,
   onClose,
 }: {
   initial: AdminConfig | null
-  onSave: (data: { title: string; content: string; active: boolean }) => void
+  type: ConfigType
+  onSave: (data: { title: string; content: string; active: boolean; scenes: string[] }) => void
   onDelete?: () => void
   onClose: () => void
 }) {
   const [title, setTitle] = useState(initial?.title ?? '')
   const [content, setContent] = useState(initial?.content ?? '')
   const [active, setActive] = useState(initial?.active ?? true)
+  const [scenes, setScenes] = useState<string[]>(initial?.scenes ?? [])
+
+  const showScenes = type === 'store-expression' || type === 'promotion'
+
+  const toggleScene = (scene: string) => {
+    setScenes((prev) =>
+      prev.includes(scene) ? prev.filter((s) => s !== scene) : [...prev, scene]
+    )
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
@@ -137,6 +163,28 @@ function ConfigForm({
             className="w-full px-4 py-2.5 bg-gray-50 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#E8734A]/30 focus:border-[#E8734A]"
             style={{ color: '#2D2016' }}
           />
+          {showScenes && (
+            <div className="space-y-2">
+              <span className="text-sm" style={{ color: '#64748B' }}>适用场景</span>
+              <div className="flex flex-wrap gap-2">
+                {SCENE_OPTIONS.map((scene) => (
+                  <button
+                    key={scene}
+                    type="button"
+                    onClick={() => toggleScene(scene)}
+                    className="px-3 py-1 rounded-full text-xs font-medium transition-colors"
+                    style={{
+                      backgroundColor: scenes.includes(scene) ? '#E8734A' : 'transparent',
+                      color: scenes.includes(scene) ? '#FFFFFF' : '#E8734A',
+                      border: `1px solid ${scenes.includes(scene) ? '#E8734A' : '#E8734A'}`,
+                    }}
+                  >
+                    {scene}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex items-center justify-between">
             <span className="text-sm" style={{ color: '#64748B' }}>启用状态</span>
             <button onClick={() => setActive(!active)} className="transition-colors">
@@ -149,7 +197,7 @@ function ConfigForm({
 
         <div className="flex items-center gap-2 pt-2">
           <button
-            onClick={() => onSave({ title, content, active })}
+            onClick={() => onSave({ title, content, active, scenes })}
             className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-medium text-white bg-[#E8734A] hover:bg-[#d4623a] transition-colors"
           >
             <Save className="w-4 h-4" />
@@ -186,7 +234,7 @@ export default function AdminPanel() {
 
   const items = getConfigsByType(activeTab)
 
-  const handleSave = (data: { title: string; content: string; active: boolean }) => {
+  const handleSave = (data: { title: string; content: string; active: boolean; scenes: string[] }) => {
     if (isNew) {
       addConfig({ id: `admin-${activeTab}-${Date.now()}`, type: activeTab, ...data })
     } else if (editing) {
@@ -272,6 +320,7 @@ export default function AdminPanel() {
       {(editing || isNew) && (
         <ConfigForm
           initial={editing}
+          type={activeTab}
           onSave={handleSave}
           onDelete={editing ? handleDelete : undefined}
           onClose={closeForm}

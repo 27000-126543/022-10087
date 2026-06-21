@@ -4,6 +4,7 @@ export interface AdminConfig {
   title: string
   content: string
   active: boolean
+  scenes?: string[]
 }
 
 const adminDefaults: AdminConfig[] = [
@@ -13,6 +14,7 @@ const adminDefaults: AdminConfig[] = [
     title: '欢迎到店问候',
     content: '您好，欢迎来到我们门店，请问今天想了解哪方面的项目呢？我们有专业的顾问为您做一对一的皮肤分析和方案推荐。',
     active: true,
+    scenes: ['新客'],
   },
   {
     id: 'admin-expr-2',
@@ -20,6 +22,7 @@ const adminDefaults: AdminConfig[] = [
     title: '项目推荐开场',
     content: '根据您的皮肤检测结果，我为您推荐几个最适合的方案，您可以了解一下，不着急做决定，我们慢慢聊。',
     active: true,
+    scenes: ['新客', '老客'],
   },
   {
     id: 'admin-expr-3',
@@ -27,6 +30,7 @@ const adminDefaults: AdminConfig[] = [
     title: '送客结语',
     content: '感谢您今天的到店咨询，回去后有任何问题随时联系我们。我们会在三天内回访了解您的恢复情况，祝您越来越好！',
     active: true,
+    scenes: ['新客', '老客', '术后关怀'],
   },
   {
     id: 'admin-expr-4',
@@ -34,6 +38,7 @@ const adminDefaults: AdminConfig[] = [
     title: '术后关怀话术',
     content: '您好，您做完项目已经X天了，恢复情况怎么样？有没有不舒服的地方？术后护理方面我再跟您确认一下注意事项。',
     active: true,
+    scenes: ['术后关怀', '老客'],
   },
   {
     id: 'admin-banned-1',
@@ -69,6 +74,7 @@ const adminDefaults: AdminConfig[] = [
     title: '新客首次体验套餐',
     content: '新客专享：皮肤检测+水光针/光子嫩肤二选一，首次体验价XXX元（原价XXX元），限量预约中。仅限首次到店客人使用，不可与其他优惠叠加。',
     active: true,
+    scenes: ['新客', '预算敏感'],
   },
   {
     id: 'admin-promo-2',
@@ -76,6 +82,7 @@ const adminDefaults: AdminConfig[] = [
     title: '抗衰联合疗程优惠',
     content: '热玛吉+超声刀联合抗衰疗程，立减XXX元，另赠3次水光针补水保养。联合治疗效果1+1>2，名额有限，预约从速。',
     active: true,
+    scenes: ['老客'],
   },
   {
     id: 'admin-promo-3',
@@ -83,6 +90,7 @@ const adminDefaults: AdminConfig[] = [
     title: '老客带新客奖励',
     content: '老客推荐新客到店，双方各获赠1次光子嫩肤体验。推荐越多奖励越多，年度推荐王更有专属大礼包！',
     active: true,
+    scenes: ['老客', '新客'],
   },
   {
     id: 'admin-complaint-1',

@@ -22,6 +22,7 @@ export interface UnifiedSearchResult {
     type: string
     title: string
     content: string
+    scenes?: string[]
   }
   projectContext?: ProjectContext
   matchedKeywords: string[]
@@ -375,6 +376,7 @@ export function unifiedSearch(
               type: config.type,
               title,
               content,
+              scenes: (config as any).scenes || [],
             },
             matchedKeywords,
           })

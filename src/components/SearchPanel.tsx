@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Search, Heart, Info, Stethoscope, Copy, Check, UserCircle, AlertTriangle, Shield, ChevronDown, ChevronUp } from 'lucide-react'
-import { useScriptStore, type UnifiedSearchResult } from '@/store/scriptStore'
+import { Search, Heart, Info, Stethoscope, Copy, Check, UserCircle, AlertTriangle, Shield, ChevronDown, ChevronUp, History, Clock, Tag, AlertCircle } from 'lucide-react'
+import { useScriptStore, type UnifiedSearchResult, type RecentSearch } from '@/store/scriptStore'
 import { useProfileStore } from '@/store/profileStore'
 import { useAdminStore } from '@/store/adminStore'
 import { adaptTone, type AdaptedScript } from '@/utils/toneAdapter'
@@ -21,12 +21,12 @@ const ADMIN_TYPE_LABELS: Record<string, { label: string; color: string }> = {
 
 const SAFETY_CATEGORIES = ['注射', '激光', '抗衰', '光电', '美肤']
 
-function getAdminConfigSignature(configs: { id: string; active: boolean; title: string; content: string }[]): string {
+function getAdminConfigSignature(configs: any[]): string {
   return configs
     .slice()
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map(c => `${c.id}:${c.active ? '1' : '0'}:${c.title.length}:${c.content.length}`)
-    .join('|')
+    .map(c => `${c.id}:${c.active ? '1' : '0'}:${c.title}:${c.content}:${(c.scenes || []).join(',')}`)
+    .join('||')
 }
 
 export default function SearchPanel() {
@@ -34,6 +34,8 @@ export default function SearchPanel() {
   const unifiedSearchResults = useScriptStore((s) => s.unifiedSearchResults)
   const setUnifiedSearchQuery = useScriptStore((s) => s.setUnifiedSearchQuery)
   const triggerUnifiedSearch = useScriptStore((s) => s.unifiedSearch)
+  const addRecentSearch = useScriptStore((s) => s.addRecentSearch)
+  const recentSearches = useScriptStore((s) => s.recentSearches)
   const adminConfigs = useAdminStore((s) => s.configs)
 
   const [searchInput, setSearchInput] = useState(unifiedSearchQuery)
@@ -42,6 +44,7 @@ export default function SearchPanel() {
   const [expandedContraId, setExpandedContraId] = useState<string | null>(null)
   const [showBannedDialog, setShowBannedDialog] = useState(false)
   const [pendingCopy, setPendingCopy] = useState<{ id: string; text: string } | null>(null)
+  const [inputFocused, setInputFocused] = useState(false)
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastSignatureRef = useRef<string>('')
@@ -72,8 +75,11 @@ export default function SearchPanel() {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       setUnifiedSearchQuery(value)
+      if (value.trim()) {
+        addRecentSearch(value)
+      }
     }, 300)
-  }, [setUnifiedSearchQuery])
+  }, [setUnifiedSearchQuery, addRecentSearch])
 
   useEffect(() => {
     return () => {
@@ -135,8 +141,16 @@ export default function SearchPanel() {
     [activeTags]
   )
 
-  const getScriptCopyText = (adapted: AdaptedScript) =>
-    SECTIONS.map((s) => `【${s.label}】\n${adapted[s.key]}`).join('\n\n')
+  const getScriptCopyText = (adapted: AdaptedScript, relatedContraList?: typeof contraindications) => {
+    const sectionsText = SECTIONS.map((s) => `【${s.label}】\n${adapted[s.key]}`).join('\n\n')
+    if (relatedContraList && relatedContraList.length > 0) {
+      const safetyText = relatedContraList
+        .map((c) => `• ${c.mustAsk}`)
+        .join('\n')
+      return `${sectionsText}\n\n【安全核对】\n${safetyText}`
+    }
+    return sectionsText
+  }
 
   const renderScriptResult = (result: UnifiedSearchResult, idx: number) => {
     if (!result.entry) return null
@@ -177,7 +191,7 @@ export default function SearchPanel() {
             {category}
           </span>
           <button
-            onClick={() => handleCopy(result.id, getScriptCopyText(adapted))}
+            onClick={() => handleCopy(result.id, getScriptCopyText(adapted, relatedContraList))}
             className="flex items-center gap-1 text-xs text-[#64748B] hover:text-[#E8734A] transition-colors"
           >
             {copiedId === result.id ? (
@@ -205,48 +219,82 @@ export default function SearchPanel() {
         </div>
         {relatedContraList.length > 0 && (
           <div className="mt-4 p-3 rounded-lg" style={{ backgroundColor: '#FEE2E2' }}>
-            <div className="flex items-center gap-1.5 mb-2">
+            <div className="flex items-center gap-1.5 mb-3">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
               <span className="text-sm font-semibold text-red-700">安全提醒：请确认以下禁忌事项</span>
             </div>
-            <div className="space-y-2">
-              {relatedContraList.map((contra) => {
-                if (!contra) return null
-                const isExpanded = expandedContraId === contra.id
-                return (
-                  <div key={contra.id} className="text-sm">
-                    <button
-                      onClick={() => setExpandedContraId(isExpanded ? null : contra.id)}
-                      className="w-full text-left"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            'text-xs px-1.5 py-0.5 rounded font-medium shrink-0',
-                            contra.severity === 'critical'
-                              ? 'bg-red-600 text-white'
-                              : 'bg-yellow-500 text-white'
-                          )}
+            {relatedContraList.filter(c => c.severity === 'critical').length > 0 && (
+              <div className="mb-3">
+                <div className="flex items-center gap-1 mb-2">
+                  <span className="text-base">🔴</span>
+                  <span className="text-xs font-semibold text-red-700">必须追问</span>
+                </div>
+                <div className="space-y-2 pl-2">
+                  {relatedContraList.filter(c => c.severity === 'critical').map((contra) => {
+                    if (!contra) return null
+                    const isExpanded = expandedContraId === contra.id
+                    return (
+                      <div key={contra.id} className="text-sm">
+                        <button
+                          onClick={() => setExpandedContraId(isExpanded ? null : contra.id)}
+                          className="w-full text-left"
                         >
-                          {contra.severity === 'critical' ? '必须追问' : '建议确认'}
-                        </span>
-                        <span className="text-[#2D2016] flex-1">{contra.mustAsk}</span>
-                        {isExpanded ? (
-                          <ChevronUp className="w-4 h-4 text-[#64748B] shrink-0" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4 text-[#64748B] shrink-0" />
+                          <div className="flex items-center gap-2">
+                            <span className="text-[#2D2016] flex-1">{contra.mustAsk}</span>
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4 text-[#64748B] shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-[#64748B] shrink-0" />
+                            )}
+                          </div>
+                        </button>
+                        {isExpanded && contra.description && (
+                          <p className="mt-1.5 text-xs text-[#64748B] leading-relaxed">
+                            {contra.description}
+                          </p>
                         )}
                       </div>
-                    </button>
-                    {isExpanded && contra.description && (
-                      <p className="mt-1.5 text-xs text-[#64748B] leading-relaxed">
-                        {contra.description}
-                      </p>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+            {relatedContraList.filter(c => c.severity === 'warning').length > 0 && (
+              <div>
+                <div className="flex items-center gap-1 mb-2">
+                  <span className="text-base">🟡</span>
+                  <span className="text-xs font-semibold text-yellow-700">建议确认</span>
+                </div>
+                <div className="space-y-2 pl-2">
+                  {relatedContraList.filter(c => c.severity === 'warning').map((contra) => {
+                    if (!contra) return null
+                    const isExpanded = expandedContraId === contra.id
+                    return (
+                      <div key={contra.id} className="text-sm">
+                        <button
+                          onClick={() => setExpandedContraId(isExpanded ? null : contra.id)}
+                          className="w-full text-left"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-[#2D2016] flex-1">{contra.mustAsk}</span>
+                            {isExpanded ? (
+                              <ChevronUp className="w-4 h-4 text-[#64748B] shrink-0" />
+                            ) : (
+                              <ChevronDown className="w-4 h-4 text-[#64748B] shrink-0" />
+                            )}
+                          </div>
+                        </button>
+                        {isExpanded && contra.description && (
+                          <p className="mt-1.5 text-xs text-[#64748B] leading-relaxed">
+                            {contra.description}
+                          </p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -257,6 +305,9 @@ export default function SearchPanel() {
     if (!result.adminConfig) return null
     const typeInfo = ADMIN_TYPE_LABELS[result.type] || { label: result.type, color: '#64748B' }
     const isVisible = idx < visibleCount
+    const scenes = result.adminConfig.scenes || []
+
+    const copyText = `【标题】\n${result.adminConfig.title}\n\n【内容】\n${result.adminConfig.content}`
 
     return (
       <div
@@ -274,7 +325,7 @@ export default function SearchPanel() {
             {typeInfo.label}
           </span>
           <button
-            onClick={() => handleCopy(result.id, result.adminConfig!.content)}
+            onClick={() => handleCopy(result.id, copyText)}
             className="flex items-center gap-1 text-xs text-[#64748B] hover:text-[#E8734A] transition-colors"
           >
             {copiedId === result.id ? (
@@ -287,6 +338,19 @@ export default function SearchPanel() {
         <h3 className="text-sm font-semibold mb-1.5" style={{ color: '#2D2016' }}>
           {result.adminConfig.title}
         </h3>
+        {scenes.length > 0 && (
+          <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+            <Tag className="w-3 h-3 text-[#64748B] shrink-0" />
+            {scenes.map((scene, i) => (
+              <span
+                key={i}
+                className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-[#64748B]"
+              >
+                {scene}
+              </span>
+            ))}
+          </div>
+        )}
         <p className="text-sm leading-relaxed" style={{ color: '#64748B' }}>
           {result.adminConfig.content}
         </p>
@@ -304,10 +368,46 @@ export default function SearchPanel() {
             placeholder="输入关键词搜索话术..."
             value={searchInput}
             onChange={(e) => handleInput(e.target.value)}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setTimeout(() => setInputFocused(false), 200)}
             className="w-full pl-10 pr-4 py-2.5 bg-white rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-[#E8734A]/30 focus:border-[#E8734A] transition-shadow"
             style={{ color: '#2D2016' }}
           />
         </div>
+        {recentSearches.length > 0 && (inputFocused || unifiedSearchResults.length === 0) && (
+          <div className="mt-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <History className="w-3.5 h-3.5 text-[#64748B]" />
+              <span className="text-xs font-medium text-[#64748B]">最近常搜</span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {recentSearches.map((item) => (
+                <button
+                  key={item.query}
+                  onClick={() => {
+                    handleInput(item.query)
+                    setSearchInput(item.query)
+                  }}
+                  className="group inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded-full bg-gray-100 hover:bg-[#E8734A]/10 transition-colors"
+                  style={{ color: '#2D2016' }}
+                >
+                  <span>{item.query}</span>
+                  <span
+                    className="inline-flex items-center justify-center text-white rounded-full"
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      fontSize: '10px',
+                      backgroundColor: '#E8734A',
+                    }}
+                  >
+                    {item.count}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {activeTags.length > 0 && (
           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
             <UserCircle className="w-4 h-4 text-[#E8734A] shrink-0" />
