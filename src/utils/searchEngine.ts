@@ -1,8 +1,8 @@
-import { ScriptEntry } from '@/data/scripts'
-import { AdminConfig } from '@/data/adminDefaults'
+import type { ScriptEntry } from '@/data/scripts'
+import type { AdminConfig } from '@/data/adminDefaults'
 import projects from '@/data/projects'
 import contraindications from '@/data/contraindications'
-import scripts from '@/data/scripts'
+import scriptsData from '@/data/scripts'
 
 export type UnifiedSearchType = 'script' | 'admin-store-expression' | 'admin-promotion' | 'admin-complaint-template'
 
@@ -10,7 +10,7 @@ export interface ProjectContext {
   projectId?: string
   projectName?: string
   category?: string
-  relatedContraindicationIds?: string[]
+  relatedContraindicationIds: string[]
 }
 
 export interface UnifiedSearchResult {
@@ -57,54 +57,73 @@ const categoryContraindications: Record<string, string[]> = {
   '美肤': ['contra-pregnancy', 'contra-skin-break', 'contra-severe-allergy']
 }
 
-let keywordDictionary: string[] | null = null
+let keywordDictionaryCache: string[] | null = null
 
 function buildKeywordDictionary(): string[] {
-  if (keywordDictionary) return keywordDictionary
+  if (keywordDictionaryCache) return keywordDictionaryCache
 
   const dict = new Set<string>()
 
-  Object.keys(semanticDictionary).forEach(k => dict.add(k))
-  Object.values(semanticDictionary).forEach(arr => arr.forEach(v => dict.add(v)))
+  try {
+    Object.keys(semanticDictionary).forEach(k => { if (k) dict.add(k) })
+    Object.values(semanticDictionary).forEach(arr => arr.forEach(v => { if (v) dict.add(v) }))
 
-  projects.forEach(p => dict.add(p.name))
+    if (Array.isArray(projects)) {
+      projects.forEach(p => { if (p?.name) dict.add(p.name) })
+    }
 
-  scripts.forEach(s => s.keywords.forEach(kw => dict.add(kw)))
+    if (Array.isArray(scriptsData)) {
+      scriptsData.forEach(s => {
+        if (Array.isArray(s?.keywords)) {
+          s.keywords.forEach(kw => { if (kw) dict.add(kw) })
+        }
+      })
+    }
 
-  Object.keys(categoryMapping).forEach(k => dict.add(k))
-  Object.values(categoryMapping).forEach(arr => arr.forEach(v => dict.add(v)))
+    Object.keys(categoryMapping).forEach(k => { if (k) dict.add(k) })
+    Object.values(categoryMapping).forEach(arr => arr.forEach(v => { if (v) dict.add(v) }))
+  } catch (e) {
+    console.warn('buildKeywordDictionary warning:', e)
+  }
 
-  const sorted = Array.from(dict).sort((a, b) => b.length - a.length)
-  keywordDictionary = sorted
+  const sorted = Array.from(dict).filter(w => w && w.length > 0).sort((a, b) => b.length - a.length)
+  keywordDictionaryCache = sorted
   return sorted
 }
 
 function extractChineseTokens(text: string): string[] {
-  const dict = buildKeywordDictionary()
   const tokens: string[] = []
-  let i = 0
+  if (!text) return tokens
 
-  while (i < text.length) {
-    const char = text[i]
-    if (!/[\u4e00-\u9fa5]/.test(char)) {
-      i++
-      continue
-    }
+  try {
+    const dict = buildKeywordDictionary()
+    let i = 0
 
-    let matched = false
-    for (const word of dict) {
-      if (text.startsWith(word, i)) {
-        tokens.push(word)
-        i += word.length
-        matched = true
-        break
+    while (i < text.length) {
+      const char = text[i]
+      if (!char || !/[\u4e00-\u9fa5]/.test(char)) {
+        i++
+        continue
+      }
+
+      let matched = false
+      for (const word of dict) {
+        if (!word) continue
+        if (text.startsWith(word, i)) {
+          tokens.push(word)
+          i += word.length
+          matched = true
+          break
+        }
+      }
+
+      if (!matched) {
+        tokens.push(char)
+        i++
       }
     }
-
-    if (!matched) {
-      tokens.push(char)
-      i++
-    }
+  } catch (e) {
+    console.warn('extractChineseTokens warning:', e)
   }
 
   return tokens
@@ -112,35 +131,44 @@ function extractChineseTokens(text: string): string[] {
 
 export function expandQuery(query: string): string[] {
   const tokens = new Set<string>()
-  const normalized = query.replace(/三千/g, '3000').replace(/3千/g, '3000')
-  
-  const numberPattern = /\d+/g
-  let match
-  while ((match = numberPattern.exec(normalized)) !== null) {
-    tokens.add(match[0])
-  }
+  if (!query) return []
 
-  const englishPattern = /[a-zA-Z]+/g
-  while ((match = englishPattern.exec(normalized)) !== null) {
-    tokens.add(match[0])
-  }
+  try {
+    const normalized = query.replace(/三千/g, '3000').replace(/3千/g, '3000')
 
-  const chineseTokens = extractChineseTokens(normalized)
-  chineseTokens.forEach(t => tokens.add(t))
-
-  for (const word of chineseTokens) {
-    if (semanticDictionary[word]) {
-      semanticDictionary[word].forEach(t => tokens.add(t))
+    const numberPattern = /\d+/g
+    let match: RegExpExecArray | null
+    while ((match = numberPattern.exec(normalized)) !== null) {
+      if (match[0]) tokens.add(match[0])
     }
-    if (categoryMapping[word]) {
-      categoryMapping[word].forEach(t => tokens.add(t))
-    }
-  }
 
-  for (const project of projects) {
-    if (normalized.includes(project.name)) {
-      tokens.add(project.name)
+    const englishPattern = /[a-zA-Z]+/g
+    while ((match = englishPattern.exec(normalized)) !== null) {
+      if (match[0]) tokens.add(match[0])
     }
+
+    const chineseTokens = extractChineseTokens(normalized)
+    chineseTokens.forEach(t => { if (t) tokens.add(t) })
+
+    for (const word of chineseTokens) {
+      if (!word) continue
+      if (semanticDictionary[word]) {
+        semanticDictionary[word].forEach(t => { if (t) tokens.add(t) })
+      }
+      if (categoryMapping[word]) {
+        categoryMapping[word].forEach(t => { if (t) tokens.add(t) })
+      }
+    }
+
+    if (Array.isArray(projects)) {
+      for (const project of projects) {
+        if (project?.name && normalized.includes(project.name)) {
+          tokens.add(project.name)
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('expandQuery warning:', e)
   }
 
   return Array.from(tokens)
@@ -149,190 +177,238 @@ export function expandQuery(query: string): string[] {
 type WeightedField = { text: string; weight: number; label: string }
 
 function getWeightedFields(entry: ScriptEntry): WeightedField[] {
-  return [
-    ...entry.keywords.map(kw => ({ text: kw, weight: 3, label: `keyword:${kw}` })),
-    { text: entry.empathy, weight: 1, label: 'empathy' },
-    { text: entry.explanation, weight: 1, label: 'explanation' },
-    { text: entry.guide, weight: 1, label: 'guide' },
-    { text: entry.category, weight: 2, label: `category:${entry.category}` },
-    { text: entry.projectRef, weight: 2, label: `projectRef:${entry.projectRef}` },
-  ]
+  const fields: WeightedField[] = []
+  try {
+    if (Array.isArray(entry.keywords)) {
+      entry.keywords.forEach(kw => {
+        if (kw) fields.push({ text: kw, weight: 3, label: `keyword:${kw}` })
+      })
+    }
+    if (entry.empathy) fields.push({ text: entry.empathy, weight: 1, label: 'empathy' })
+    if (entry.explanation) fields.push({ text: entry.explanation, weight: 1, label: 'explanation' })
+    if (entry.guide) fields.push({ text: entry.guide, weight: 1, label: 'guide' })
+    if (entry.category) fields.push({ text: entry.category, weight: 2, label: `category:${entry.category}` })
+    if (entry.projectRef) fields.push({ text: entry.projectRef, weight: 2, label: `projectRef:${entry.projectRef}` })
+  } catch (e) {
+    console.warn('getWeightedFields warning:', e)
+  }
+  return fields
 }
 
-export function searchScripts(query: string, scripts: ScriptEntry[]): SearchResult[] {
-  if (!query.trim()) return []
+export function searchScripts(query: string, scriptsList: ScriptEntry[]): SearchResult[] {
+  if (!query || !query.trim() || !Array.isArray(scriptsList)) return []
 
-  const expandedTokens = expandQuery(query)
-  const originalTokens = query.trim().split(/\s+/)
+  try {
+    const expandedTokens = expandQuery(query)
+    const originalTokens = query.trim().split(/\s+/).filter(t => t)
 
-  const detectedProjects = projects.filter(p => 
-    expandedTokens.some(t => p.name.includes(t) || t.includes(p.name))
-  )
+    const detectedProjects = Array.isArray(projects) ? projects.filter(p => {
+      if (!p?.name) return false
+      return expandedTokens.some(t => t && (p.name.includes(t) || t.includes(p.name)))
+    }) : []
 
-  const results: SearchResult[] = []
+    const results: SearchResult[] = []
 
-  for (const entry of scripts) {
-    const fields = getWeightedFields(entry)
-    let totalScore = 0
-    const matchedLabels: string[] = []
-    const allText = `${entry.keywords.join(' ')} ${entry.empathy} ${entry.explanation} ${entry.guide} ${entry.category} ${entry.projectRef}`
+    for (const entry of scriptsList) {
+      if (!entry) continue
+      const fields = getWeightedFields(entry)
+      let totalScore = 0
+      const matchedLabels: string[] = []
+      const kwText = Array.isArray(entry.keywords) ? entry.keywords.join(' ') : ''
+      const allText = `${kwText} ${entry.empathy || ''} ${entry.explanation || ''} ${entry.guide || ''} ${entry.category || ''} ${entry.projectRef || ''}`
 
-    for (const token of originalTokens) {
-      for (const field of fields) {
-        if (field.text === token) {
-          totalScore += 5
-          if (!matchedLabels.includes(field.label)) matchedLabels.push(field.label)
-        } else if (field.text.includes(token)) {
-          totalScore += field.weight
-          if (!matchedLabels.includes(field.label)) matchedLabels.push(field.label)
+      for (const token of originalTokens) {
+        if (!token) continue
+        for (const field of fields) {
+          if (!field?.text) continue
+          if (field.text === token) {
+            totalScore += 5
+            if (!matchedLabels.includes(field.label)) matchedLabels.push(field.label)
+          } else if (field.text.includes(token)) {
+            totalScore += field.weight
+            if (!matchedLabels.includes(field.label)) matchedLabels.push(field.label)
+          }
         }
       }
-    }
 
-    for (const token of expandedTokens) {
-      if (originalTokens.includes(token)) continue
-      for (const field of fields) {
-        if (field.text.includes(token)) {
-          totalScore += 1.5
-          if (!matchedLabels.includes(field.label)) matchedLabels.push(field.label)
+      for (const token of expandedTokens) {
+        if (!token || originalTokens.includes(token)) continue
+        for (const field of fields) {
+          if (!field?.text) continue
+          if (field.text.includes(token)) {
+            totalScore += 1.5
+            if (!matchedLabels.includes(field.label)) matchedLabels.push(field.label)
+          }
         }
       }
-    }
 
-    if (entry.projectRef) {
-      const entryProject = projects.find(p => p.id === entry.projectRef)
-      if (entryProject) {
-        for (const token of expandedTokens) {
-          if (entryProject.name.includes(token) || token.includes(entryProject.name)) {
-            totalScore += 2
-            if (!matchedLabels.includes(`project:${entryProject.name}`)) {
-              matchedLabels.push(`project:${entryProject.name}`)
+      if (entry.projectRef && Array.isArray(projects)) {
+        const entryProject = projects.find(p => p?.id === entry.projectRef)
+        if (entryProject?.name) {
+          for (const token of expandedTokens) {
+            if (!token) continue
+            if (entryProject.name.includes(token) || token.includes(entryProject.name)) {
+              totalScore += 2
+              const label = `project:${entryProject.name}`
+              if (!matchedLabels.includes(label)) matchedLabels.push(label)
             }
           }
         }
       }
-    }
 
-    for (const dp of detectedProjects) {
-      if (entry.projectRef === dp.id) {
-        totalScore += 4
-        if (!matchedLabels.includes(`boost:${dp.name}`)) {
-          matchedLabels.push(`boost:${dp.name}`)
+      for (const dp of detectedProjects) {
+        if (!dp?.id) continue
+        if (entry.projectRef === dp.id) {
+          totalScore += 4
+          const label = `boost:${dp.name}`
+          if (!matchedLabels.includes(label)) matchedLabels.push(label)
+        }
+        if (dp.name && allText.includes(dp.name)) {
+          totalScore += 2
         }
       }
-      if (allText.includes(dp.name)) {
-        totalScore += 2
+
+      if (totalScore > 0) {
+        results.push({ entry, score: totalScore, matches: matchedLabels })
       }
     }
 
-    if (totalScore > 0) {
-      results.push({ entry, score: totalScore, matches: matchedLabels })
-    }
+    results.sort((a, b) => b.score - a.score)
+    return results
+  } catch (e) {
+    console.error('searchScripts error:', e)
+    return []
   }
-
-  results.sort((a, b) => b.score - a.score)
-  return results
 }
 
 export function buildProjectContext(projectName: string): ProjectContext | undefined {
-  const project = projects.find(p => p.name === projectName)
-  if (!project) return undefined
+  try {
+    if (!Array.isArray(projects) || !projectName) return undefined
+    const project = projects.find(p => p?.name === projectName)
+    if (!project) return undefined
 
-  const relatedContra = contraindications
-    .filter(c => c.relatedProjects.includes(project.id))
-    .map(c => c.id)
+    const relatedContra = Array.isArray(contraindications)
+      ? contraindications.filter(c => c && Array.isArray(c.relatedProjects) && c.relatedProjects.includes(project.id)).map(c => c.id).filter(Boolean) as string[]
+      : []
 
-  return {
-    projectId: project.id,
-    projectName: project.name,
-    relatedContraindicationIds: relatedContra
+    return {
+      projectId: project.id,
+      projectName: project.name,
+      relatedContraindicationIds: relatedContra,
+    }
+  } catch (e) {
+    console.warn('buildProjectContext warning:', e)
+    return undefined
   }
 }
 
 export function buildCategoryContext(category: string): ProjectContext | undefined {
-  const contraIds = categoryContraindications[category]
-  if (!contraIds) return undefined
+  try {
+    const contraIds = categoryContraindications[category]
+    if (!Array.isArray(contraIds)) return undefined
 
-  return {
-    projectName: category,
-    category,
-    relatedContraindicationIds: contraIds
+    const validIds = Array.isArray(contraindications)
+      ? contraIds.filter(id => contraindications.some(c => c?.id === id))
+      : contraIds
+
+    return {
+      projectName: category,
+      category,
+      relatedContraindicationIds: validIds,
+    }
+  } catch (e) {
+    console.warn('buildCategoryContext warning:', e)
+    return undefined
   }
 }
 
 export function unifiedSearch(
   query: string,
-  scripts: ScriptEntry[],
+  scriptsList: ScriptEntry[],
   adminConfigs: AdminConfig[]
 ): UnifiedSearchResult[] {
-  if (!query.trim()) return []
+  if (!query || !query.trim()) return []
 
-  const scriptResults = searchScripts(query, scripts)
+  try {
+    const scriptResults = searchScripts(query, scriptsList)
 
-  const tokens = expandQuery(query)
-  const originalTokens = query.trim().split(/\s+/)
-  const allTokens = [...new Set([...originalTokens, ...tokens])]
+    const tokens = expandQuery(query)
+    const originalTokens = query.trim().split(/\s+/).filter(t => t)
+    const allTokens = Array.from(new Set([...originalTokens, ...tokens])).filter(t => t)
 
-  const searchableTypes: AdminConfig['type'][] = ['store-expression', 'promotion', 'complaint-template']
-  const adminResults: UnifiedSearchResult[] = []
+    const searchableTypes: AdminConfig['type'][] = ['store-expression', 'promotion', 'complaint-template']
+    const adminResults: UnifiedSearchResult[] = []
 
-  for (const config of adminConfigs) {
-    if (!config.active || !searchableTypes.includes(config.type)) continue
+    if (Array.isArray(adminConfigs)) {
+      for (const config of adminConfigs) {
+        if (!config || !config.active || !searchableTypes.includes(config.type)) continue
 
-    let score = 0
-    const matchedKeywords: string[] = []
+        let score = 0
+        const matchedKeywords: string[] = []
+        const title = config.title || ''
+        const content = config.content || ''
 
-    for (const token of allTokens) {
-      if (config.title.toLowerCase().includes(token.toLowerCase())) {
-        score += 3
-        if (!matchedKeywords.includes(token)) matchedKeywords.push(token)
-      }
-      if (config.content.toLowerCase().includes(token.toLowerCase())) {
-        score += 1
-        if (!matchedKeywords.includes(token)) matchedKeywords.push(token)
+        for (const token of allTokens) {
+          if (!token) continue
+          const t = token.toLowerCase()
+          if (title.toLowerCase().includes(t)) {
+            score += 3
+            if (!matchedKeywords.includes(token)) matchedKeywords.push(token)
+          }
+          if (content.toLowerCase().includes(t)) {
+            score += 1
+            if (!matchedKeywords.includes(token)) matchedKeywords.push(token)
+          }
+        }
+
+        if (score > 0) {
+          let type: UnifiedSearchType
+          if (config.type === 'store-expression') type = 'admin-store-expression'
+          else if (config.type === 'promotion') type = 'admin-promotion'
+          else type = 'admin-complaint-template'
+
+          adminResults.push({
+            type,
+            id: config.id,
+            score,
+            adminConfig: {
+              type: config.type,
+              title,
+              content,
+            },
+            matchedKeywords,
+          })
+        }
       }
     }
 
-    if (score > 0) {
-      let type: UnifiedSearchType
-      if (config.type === 'store-expression') type = 'admin-store-expression'
-      else if (config.type === 'promotion') type = 'admin-promotion'
-      else type = 'admin-complaint-template'
+    const mappedScriptResults: UnifiedSearchResult[] = scriptResults.map(r => {
+      const detectedProjectName = Array.isArray(projects)
+        ? projects.find(p => p?.id === r.entry.projectRef)?.name
+        : undefined
+      let projectContext: ProjectContext | undefined
+      if (detectedProjectName) {
+        projectContext = buildProjectContext(detectedProjectName)
+      }
+      if (!projectContext && r.entry.category) {
+        projectContext = buildCategoryContext(r.entry.category)
+      }
+      return {
+        type: 'script' as const,
+        id: r.entry.id,
+        score: r.score,
+        entry: r.entry,
+        matchedKeywords: r.matches,
+        projectContext,
+      }
+    })
 
-      adminResults.push({
-        type,
-        id: config.id,
-        score,
-        adminConfig: {
-          type: config.type,
-          title: config.title,
-          content: config.content,
-        },
-        matchedKeywords,
-      })
-    }
+    const allResults = [...mappedScriptResults, ...adminResults]
+    allResults.sort((a, b) => b.score - a.score)
+
+    return allResults
+  } catch (e) {
+    console.error('unifiedSearch error:', e)
+    return []
   }
-
-  const mappedScriptResults: UnifiedSearchResult[] = scriptResults.map(r => {
-  const detectedProjectName = projects.find(p => r.entry.projectRef === p.id)?.name
-  let projectContext: ProjectContext | undefined
-  if (detectedProjectName) {
-    projectContext = buildProjectContext(detectedProjectName)
-  } else if (r.entry.category && categoryContraindications[r.entry.category]) {
-    projectContext = buildCategoryContext(r.entry.category)
-  }
-  return {
-    type: 'script' as const,
-    id: r.entry.id,
-    score: r.score,
-    entry: r.entry,
-    matchedKeywords: r.matches,
-    projectContext,
-  }
-})
-
-  const allResults = [...mappedScriptResults, ...adminResults]
-  allResults.sort((a, b) => b.score - a.score)
-
-  return allResults
 }
