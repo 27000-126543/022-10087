@@ -33,6 +33,12 @@ export default function SearchPanel() {
 
   const activeBannedClaims = useMemo(() => adminConfigs.filter(c => c.type === 'banned-claim' && c.active), [adminConfigs])
 
+  useEffect(() => {
+    if (unifiedSearchQuery.trim()) {
+      useScriptStore.getState().unifiedSearch(unifiedSearchQuery)
+    }
+  }, [adminConfigs, unifiedSearchQuery])
+
   const handleInput = useCallback((value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => setUnifiedSearchQuery(value), 300)

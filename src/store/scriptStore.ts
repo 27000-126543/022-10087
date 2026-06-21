@@ -1,13 +1,12 @@
 import { create } from 'zustand'
 import { ScriptEntry, defaultScripts } from '@/data/scripts'
-import adminDefaults, { AdminConfig } from '@/data/adminDefaults'
 import { UnifiedSearchResult, unifiedSearch as performUnifiedSearch } from '@/utils/searchEngine'
+import { useAdminStore } from '@/store/adminStore'
 
 export type { UnifiedSearchResult }
 
 interface ScriptState {
   scripts: ScriptEntry[]
-  adminConfigs: AdminConfig[]
   searchQuery: string
   searchResults: ScriptEntry[]
   unifiedSearchQuery: string
@@ -51,7 +50,6 @@ function computeRelevance(entry: ScriptEntry, query: string): number {
 
 export const useScriptStore = create<ScriptState>((set, get) => ({
   scripts: defaultScripts,
-  adminConfigs: adminDefaults,
   searchQuery: '',
   searchResults: [],
   unifiedSearchQuery: '',
@@ -98,7 +96,8 @@ export const useScriptStore = create<ScriptState>((set, get) => ({
       set({ unifiedSearchResults: [] })
       return
     }
-    const results = performUnifiedSearch(query, get().scripts, get().adminConfigs)
+    const adminConfigs = useAdminStore.getState().configs
+    const results = performUnifiedSearch(query, get().scripts, adminConfigs)
     set({ unifiedSearchResults: results })
   },
 }))

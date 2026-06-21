@@ -2,12 +2,14 @@ import { ScriptEntry } from '@/data/scripts'
 import { AdminConfig } from '@/data/adminDefaults'
 import projects from '@/data/projects'
 import contraindications from '@/data/contraindications'
+import scripts from '@/data/scripts'
 
 export type UnifiedSearchType = 'script' | 'admin-store-expression' | 'admin-promotion' | 'admin-complaint-template'
 
 export interface ProjectContext {
   projectId?: string
   projectName?: string
+  category?: string
   relatedContraindicationIds?: string[]
 }
 
@@ -47,6 +49,67 @@ const categoryMapping: Record<string, string[]> = {
   '抗衰': ['抗衰'], '注射': ['注射'], '激光': ['激光'], '光电': ['激光'], '美肤': ['美肤']
 }
 
+const categoryContraindications: Record<string, string[]> = {
+  '抗衰': ['contra-pregnancy', 'contra-skin-break', 'contra-immune-disease', 'contra-recent-medication', 'contra-scar-constitution'],
+  '注射': ['contra-pregnancy', 'contra-skin-break', 'contra-severe-allergy', 'contra-recent-injection'],
+  '激光': ['contra-pregnancy', 'contra-skin-break', 'contra-immune-disease', 'contra-recent-medication', 'contra-severe-allergy'],
+  '光电': ['contra-pregnancy', 'contra-skin-break', 'contra-immune-disease', 'contra-recent-medication', 'contra-severe-allergy'],
+  '美肤': ['contra-pregnancy', 'contra-skin-break', 'contra-severe-allergy']
+}
+
+let keywordDictionary: string[] | null = null
+
+function buildKeywordDictionary(): string[] {
+  if (keywordDictionary) return keywordDictionary
+
+  const dict = new Set<string>()
+
+  Object.keys(semanticDictionary).forEach(k => dict.add(k))
+  Object.values(semanticDictionary).forEach(arr => arr.forEach(v => dict.add(v)))
+
+  projects.forEach(p => dict.add(p.name))
+
+  scripts.forEach(s => s.keywords.forEach(kw => dict.add(kw)))
+
+  Object.keys(categoryMapping).forEach(k => dict.add(k))
+  Object.values(categoryMapping).forEach(arr => arr.forEach(v => dict.add(v)))
+
+  const sorted = Array.from(dict).sort((a, b) => b.length - a.length)
+  keywordDictionary = sorted
+  return sorted
+}
+
+function extractChineseTokens(text: string): string[] {
+  const dict = buildKeywordDictionary()
+  const tokens: string[] = []
+  let i = 0
+
+  while (i < text.length) {
+    const char = text[i]
+    if (!/[\u4e00-\u9fa5]/.test(char)) {
+      i++
+      continue
+    }
+
+    let matched = false
+    for (const word of dict) {
+      if (text.startsWith(word, i)) {
+        tokens.push(word)
+        i += word.length
+        matched = true
+        break
+      }
+    }
+
+    if (!matched) {
+      tokens.push(char)
+      i++
+    }
+  }
+
+  return tokens
+}
+
 export function expandQuery(query: string): string[] {
   const tokens = new Set<string>()
   const normalized = query.replace(/三千/g, '3000').replace(/3千/g, '3000')
@@ -57,10 +120,15 @@ export function expandQuery(query: string): string[] {
     tokens.add(match[0])
   }
 
-  const wordPattern = /[\u4e00-\u9fa5]+|[a-zA-Z]+/g
-  while ((match = wordPattern.exec(normalized)) !== null) {
-    const word = match[0]
-    tokens.add(word)
+  const englishPattern = /[a-zA-Z]+/g
+  while ((match = englishPattern.exec(normalized)) !== null) {
+    tokens.add(match[0])
+  }
+
+  const chineseTokens = extractChineseTokens(normalized)
+  chineseTokens.forEach(t => tokens.add(t))
+
+  for (const word of chineseTokens) {
     if (semanticDictionary[word]) {
       semanticDictionary[word].forEach(t => tokens.add(t))
     }
@@ -181,6 +249,17 @@ export function buildProjectContext(projectName: string): ProjectContext | undef
   }
 }
 
+export function buildCategoryContext(category: string): ProjectContext | undefined {
+  const contraIds = categoryContraindications[category]
+  if (!contraIds) return undefined
+
+  return {
+    projectName: category,
+    category,
+    relatedContraindicationIds: contraIds
+  }
+}
+
 export function unifiedSearch(
   query: string,
   scripts: ScriptEntry[],
@@ -236,13 +315,19 @@ export function unifiedSearch(
 
   const mappedScriptResults: UnifiedSearchResult[] = scriptResults.map(r => {
   const detectedProjectName = projects.find(p => r.entry.projectRef === p.id)?.name
+  let projectContext: ProjectContext | undefined
+  if (detectedProjectName) {
+    projectContext = buildProjectContext(detectedProjectName)
+  } else if (r.entry.category && categoryContraindications[r.entry.category]) {
+    projectContext = buildCategoryContext(r.entry.category)
+  }
   return {
     type: 'script' as const,
     id: r.entry.id,
     score: r.score,
     entry: r.entry,
     matchedKeywords: r.matches,
-    projectContext: detectedProjectName ? buildProjectContext(detectedProjectName) : undefined,
+    projectContext,
   }
 })
 
